@@ -117,6 +117,19 @@ describe('ActivityCard', () => {
     // But may not show detailed stats (implementation dependent)
   })
 
+  it('handles very long titles properly', () => {
+    const longTitleActivity = {
+      ...mockActivity,
+      title: 'This is a very long activity title that should be truncated properly without cutting off text in an awkward way'
+    }
+    
+    render(<ActivityCard activity={longTitleActivity} />)
+    
+    const titleElement = screen.getByText(/This is a very long activity title/)
+    expect(titleElement).toBeInTheDocument()
+    expect(titleElement).toHaveClass('line-clamp-2', 'break-words')
+  })
+
   describe('difficulty color mapping', () => {
     const testCases = [
       { difficulty: 'easy', expectedClass: 'bg-green-100', displayText: 'Easy' },

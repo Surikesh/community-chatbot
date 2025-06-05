@@ -50,16 +50,16 @@ export const MessageBubble = memo(function MessageBubble({
 
       {/* Message Content */}
       <div className={cn(
-        "flex-1 max-w-[85%]",
-        isUser ? "flex flex-col items-end" : "flex flex-col items-start"
+        "flex-1",
+        isUser ? "flex flex-col items-end max-w-[85%]" : "flex flex-col items-start max-w-[90%]"
       )}>
         <Card className={cn(
-          "relative",
+          "relative w-full",
           isUser 
-            ? "bg-primary text-primary-foreground ml-12" 
+            ? "bg-primary text-primary-foreground ml-8" 
             : isError
               ? "bg-destructive/10 border-destructive/50"
-              : "bg-muted mr-12"
+              : "bg-muted mr-8"
         )}>
           <CardContent className="p-3">
             {/* Message Text */}
@@ -86,14 +86,14 @@ export const MessageBubble = memo(function MessageBubble({
                   )}
                 </div>
                 
-                <div className="grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-1 lg:grid-cols-2 xl:grid-cols-1">
                   {message.activities.map((activity) => (
                     <ActivityCard
                       key={activity.id}
                       activity={activity}
                       onClick={() => onActivityClick?.(activity)}
                       showDetails={false}
-                      className="cursor-pointer hover:shadow-md transition-shadow"
+                      className="cursor-pointer hover:shadow-md transition-shadow w-full"
                     />
                   ))}
                 </div>

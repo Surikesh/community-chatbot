@@ -42,12 +42,14 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 
   // Actions
   addMessage: (message: Message) => {
+    console.log('Store: Adding message:', message)
     set((state) => ({
       messages: [...state.messages, message]
     }))
   },
 
   updateMessage: (id: string, updates: Partial<Message>) => {
+    console.log('Store: Updating message:', id, updates)
     set((state) => ({
       messages: state.messages.map((msg) =>
         msg.id === id ? { ...msg, ...updates } : msg

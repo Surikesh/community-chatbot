@@ -6,9 +6,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"community-chatbot/internal/config"
 	"community-chatbot/internal/handlers"
+	"community-chatbot/internal/middleware"
 	"community-chatbot/internal/models"
 
 	"github.com/gofiber/fiber/v2"
@@ -29,7 +31,12 @@ func main() {
 	// Initialize database
 	db, err := initDatabase(cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+		if cfg.Server.Environment == "development" {
+			log.Printf("Warning: Database connection failed (continuing in dev mode): %v", err)
+			db = nil
+		} else {
+			log.Fatalf("Failed to initialize database: %v", err)
+		}
 	}
 
 	// Initialize Fiber app
@@ -46,11 +53,16 @@ func main() {
 
 	// Middleware
 	app.Use(recover.New())
+	app.Use(middleware.RequestLogging())
+	app.Use(middleware.EventSourceLogging())
+	app.Use(middleware.RateLimitLogging())
 	app.Use(logger.New())
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: cfg.CORS.AllowOrigins,
-		AllowMethods: cfg.CORS.AllowMethods,
-		AllowHeaders: cfg.CORS.AllowHeaders,
+		AllowOrigins:     cfg.CORS.AllowOrigins,
+		AllowMethods:     cfg.CORS.AllowMethods,
+		AllowHeaders:     cfg.CORS.AllowHeaders,
+		AllowCredentials: true,
+		ExposeHeaders:    "Content-Type,Cache-Control,Connection",
 	}))
 
 	// Setup routes
@@ -99,13 +111,41 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 
 // setupRoutes configures all API routes
 func setupRoutes(app *fiber.App, db *gorm.DB) {
-	// Health check
-	healthHandler := handlers.NewHealthHandler(db)
-	app.Get("/health", healthHandler.GetHealth)
+	// Chat handler (works without database)
+	chatHandler := handlers.NewChatHandler()
+
+	// Health check (may fail if no database)
+	if db != nil {
+		healthHandler := handlers.NewHealthHandler(db)
+		app.Get("/health", healthHandler.GetHealth)
+	} else {
+		// Simple health check without database
+		app.Get("/health", func(c *fiber.Ctx) error {
+			return c.JSON(fiber.Map{
+				"status":    "healthy",
+				"message":   "Server running (no database)",
+				"timestamp": time.Now(),
+			})
+		})
+	}
 
 	// API v1 routes
 	v1 := app.Group("/api/v1")
 	
 	// Health check for API
-	v1.Get("/health", healthHandler.GetHealth)
+	if db != nil {
+		healthHandler := handlers.NewHealthHandler(db)
+		v1.Get("/health", healthHandler.GetHealth)
+	} else {
+		v1.Get("/health", func(c *fiber.Ctx) error {
+			return c.JSON(fiber.Map{
+				"status":    "healthy",
+				"message":   "API running (no database)",
+				"timestamp": time.Now(),
+			})
+		})
+	}
+	
+	// Chat streaming endpoint
+	v1.Get("/chat/stream", chatHandler.StreamChat)
 }

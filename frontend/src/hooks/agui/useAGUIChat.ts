@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef, useState, useEffect } from 'react'
 import { useChatStore } from '@/stores'
 import type { 
   AGUIEvent, 
@@ -35,9 +35,13 @@ export function useAGUIChat({
   onToolExecution 
 }: UseAGUIChatProps): UseAGUIChatReturn {
   const [isConnected, setIsConnected] = useState(false)
+  const [connectionError, setConnectionError] = useState<string | undefined>(undefined)
+  const [reconnectAttempts, setReconnectAttempts] = useState(0)
   const eventSourceRef = useRef<EventSource | null>(null)
   const currentMessageRef = useRef<string>('')
   const currentMessageIdRef = useRef<string>('')
+  const isManuallyDisconnected = useRef(false)
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const {
     addMessage,
@@ -49,6 +53,9 @@ export function useAGUIChat({
     isStreaming,
     error
   } = useChatStore()
+
+  // Combine store error and connection error
+  const combinedError = error || connectionError
 
   /**
    * Parse AG-UI event from SSE data
@@ -152,6 +159,16 @@ export function useAGUIChat({
         
         currentMessageRef.current = ''
         currentMessageIdRef.current = ''
+        
+        // Close the EventSource connection to prevent loops
+        // Set manual disconnection flag to prevent automatic reconnection
+        isManuallyDisconnected.current = true
+        if (eventSourceRef.current) {
+          console.log('Closing EventSource after streaming ended - preventing automatic reconnection')
+          eventSourceRef.current.close()
+          eventSourceRef.current = null
+          setIsConnected(false)
+        }
         break
       }
 
@@ -169,6 +186,15 @@ export function useAGUIChat({
           timestamp: new Date().toISOString()
         }
         addMessage(errorMessage)
+        
+        // Close connection on error to prevent reconnection loops
+        isManuallyDisconnected.current = true
+        if (eventSourceRef.current) {
+          console.log('Closing EventSource due to error - preventing automatic reconnection')
+          eventSourceRef.current.close()
+          eventSourceRef.current = null
+          setIsConnected(false)
+        }
         break
       }
 
@@ -181,42 +207,88 @@ export function useAGUIChat({
    * Setup Server-Sent Events connection
    */
   const setupEventSource = useCallback((messageContent: string) => {
-    const url = new URL(endpoint)
-    url.searchParams.set('message', encodeURIComponent(messageContent))
+    console.log('Setting up EventSource with endpoint:', endpoint)
     
-    const eventSource = new EventSource(url.toString())
+    // Clear any previous errors
+    setConnectionError(undefined)
+    setError(undefined)
+    
+    // Validate endpoint format
+    if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) {
+      const errorMsg = 'Invalid endpoint URL format. Must be a full URL including protocol and host.'
+      console.error(errorMsg)
+      setConnectionError(errorMsg)
+      return
+    }
+    
+    // Create URL object from the endpoint
+    let url: URL
+    try {
+      url = new URL(endpoint)
+      url.searchParams.set('message', messageContent) // Don't double encode
+    } catch (error) {
+      const errorMsg = `Failed to create URL from endpoint: ${endpoint}`
+      console.error(errorMsg, error)
+      setConnectionError(errorMsg)
+      return
+    }
+    
+    console.log('Connecting to chat stream at:', url.toString())
+    
+    // Create EventSource with proper error handling
+    let eventSource: EventSource
+    try {
+      eventSource = new EventSource(url.toString())
+      console.log('EventSource created successfully')
+    } catch (error) {
+      const errorMsg = `Failed to connect to chat API: ${error instanceof Error ? error.message : String(error)}`
+      console.error('Failed to create EventSource:', error)
+      setConnectionError(errorMsg)
+      return
+    }
     eventSourceRef.current = eventSource
 
-    eventSource.onopen = () => {
+    eventSource.onopen = (event) => {
+      console.log('EventSource connection opened:', event)
       setIsConnected(true)
+      setConnectionError(undefined)
       setError(undefined)
     }
 
     eventSource.onmessage = (event) => {
+      console.log('EventSource message received:', event.data)
       const aguiEvent = parseAGUIEvent(event.data)
       if (aguiEvent) {
+        console.log('Parsed AG-UI event:', aguiEvent)
         handleAGUIEvent(aguiEvent)
+      } else {
+        console.warn('Failed to parse AG-UI event:', event.data)
       }
     }
 
     eventSource.onerror = (error) => {
       console.error('EventSource error:', error)
+      console.log('EventSource readyState:', eventSource.readyState)
       setIsConnected(false)
       
+      // Immediately close the connection to prevent automatic reconnection
+      eventSource.close()
+      eventSourceRef.current = null
+      
+      let errorMessage = 'Connection error occurred'
+      
       if (eventSource.readyState === EventSource.CLOSED) {
-        setError('Connection closed unexpectedly')
+        errorMessage = 'Connection closed unexpectedly'
         onError?.('Connection lost. Please try again.')
       } else {
-        setError('Connection error occurred')
         onError?.('Failed to connect to server')
       }
       
-      eventSource.close()
-      eventSourceRef.current = null
+      setConnectionError(errorMessage)
     }
 
     return eventSource
-  }, [endpoint, parseAGUIEvent, handleAGUIEvent, setError, onError])
+  }, [endpoint, parseAGUIEvent, handleAGUIEvent, onError])
 
   /**
    * Send message and setup streaming response
@@ -227,10 +299,22 @@ export function useAGUIChat({
       return
     }
 
-    // Close existing connection
+    console.log('SendMessage called with:', message)
+    console.log('Endpoint:', endpoint)
+
+    // Close existing connection and reset state
     if (eventSourceRef.current) {
+      console.log('Closing existing EventSource before sending new message')
+      isManuallyDisconnected.current = true // Mark as manual to prevent error handling
       eventSourceRef.current.close()
       eventSourceRef.current = null
+      setIsConnected(false)
+    }
+
+    // Clear any pending reconnection timeouts
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
     }
 
     // Add user message to chat
@@ -247,32 +331,65 @@ export function useAGUIChat({
       setupEventSource(message)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Failed to send message'
+      console.error('Error in sendMessage:', errorMsg)
       setError(errorMsg)
       onError?.(errorMsg)
     }
-  }, [isStreaming, addMessage, setupEventSource, setError, onError])
+  }, [isStreaming, addMessage, setupEventSource, onError, endpoint])
+
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      console.log('Cleaning up EventSource connection and timeouts')
+      
+      // Clear any pending timeouts
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current)
+        reconnectTimeoutRef.current = null
+      }
+      
+      // Close EventSource
+      if (eventSourceRef.current) {
+        isManuallyDisconnected.current = true
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+    }
+  }, [])
 
   /**
    * Reconnect to the streaming endpoint
    */
   const reconnect = useCallback(() => {
+    console.log('Manual reconnect requested')
+    
+    // Close existing connection
     if (eventSourceRef.current) {
+      isManuallyDisconnected.current = true
       eventSourceRef.current.close()
       eventSourceRef.current = null
     }
     
-    setIsConnected(false)
-    setError(undefined)
+    // Clear timeouts
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current)
+      reconnectTimeoutRef.current = null
+    }
     
-    // Could implement auto-retry logic here
-    // For now, require manual reconnection
-  }, [setError])
+    setIsConnected(false)
+    setConnectionError(undefined)
+    setError(undefined)
+    setReconnectAttempts(0)
+    
+    // Note: We don't automatically reconnect here
+    // User needs to send a new message to establish connection
+  }, [])
 
   return {
     sendMessage,
     isStreaming,
     isConnected,
-    error,
+    error: combinedError,
     reconnect
   }
 }

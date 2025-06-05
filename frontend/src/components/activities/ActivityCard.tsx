@@ -109,22 +109,22 @@ export const ActivityCard = memo(function ActivityCard({
         </div>
       </div>
 
-      <CardHeader className="pb-2">
+      <CardHeader className="pb-2 px-3 sm:px-6 pt-3 sm:pt-6">
         <div className="space-y-2">
-          <h3 className="font-semibold text-lg leading-tight line-clamp-2">
+          <h3 className="font-semibold text-base sm:text-lg leading-tight line-clamp-2 break-words">
             {title}
           </h3>
           
           <div className="flex items-center gap-1 text-muted-foreground">
             <MapPin className="h-4 w-4 shrink-0" />
-            <span className="text-sm truncate">
+            <span className="text-sm truncate min-w-0">
               {location.city ? `${location.city}, ${location.country}` : location.name}
             </span>
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="pt-0">
+      <CardContent className="pt-0 px-3 sm:px-6 pb-3 sm:pb-6">
         {/* Description */}
         {showDetails && (
           <p className="text-sm text-muted-foreground mb-4 line-clamp-3">
@@ -133,25 +133,25 @@ export const ActivityCard = memo(function ActivityCard({
         )}
 
         {/* Activity stats */}
-        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground mb-4">
+        <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mb-4">
           {duration && (
-            <div className="flex items-center gap-1">
-              <Clock className="h-4 w-4" />
-              <span>{duration}</span>
+            <div className="flex items-center gap-1 min-w-0">
+              <Clock className="h-4 w-4 shrink-0" />
+              <span className="truncate">{duration}</span>
             </div>
           )}
           
           {distance && (
-            <div className="flex items-center gap-1">
-              <span className="text-lg">📏</span>
-              <span>{formatDistance(distance)}</span>
+            <div className="flex items-center gap-1 min-w-0">
+              <span className="text-lg shrink-0">📏</span>
+              <span className="truncate">{formatDistance(distance)}</span>
             </div>
           )}
           
           {elevation && (
-            <div className="flex items-center gap-1">
-              <TrendingUp className="h-4 w-4" />
-              <span>{formatElevation(elevation)}</span>
+            <div className="flex items-center gap-1 min-w-0">
+              <TrendingUp className="h-4 w-4 shrink-0" />
+              <span className="truncate">{formatElevation(elevation)}</span>
             </div>
           )}
         </div>

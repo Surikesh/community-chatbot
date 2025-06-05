@@ -75,7 +75,7 @@ describe('ChatInterface', () => {
 
     render(<ChatInterface />)
     
-    expect(screen.getByText('Connection failed')).toBeInTheDocument()
-    expect(screen.getByText('Reconnect')).toBeInTheDocument()
+    expect(screen.getByText(/unable to connect to server/i)).toBeInTheDocument()
+    expect(screen.getByText('Retry')).toBeInTheDocument()
   })
 })

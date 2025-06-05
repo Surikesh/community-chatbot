@@ -68,6 +68,15 @@
   - [x] Established coding standards
   - [x] Setup AI instruction guidelines
 
+### Latest Updates (2025-06-02)
+- [x] **ActivityCard text cutoff fix** *(Completed: 2025-06-02)*
+  - [x] Fixed title truncation issues in activity cards
+  - [x] Improved responsive text handling
+  - [x] Enhanced MessageBubble layout for better space utilization
+  - [x] Added proper line-clamp CSS utilities
+  - [x] Updated tests for long text scenarios
+  - [x] Documented issue resolution in ISSUE_LOG.md
+
 ## 🚧 In Progress
 
 ### Currently Working On

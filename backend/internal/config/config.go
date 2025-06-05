@@ -59,8 +59,24 @@ type CORSConfig struct {
 
 // Load reads configuration from environment variables and .env file
 func Load() (*Config, error) {
-	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
+	// Try to load .env file from different locations
+	envFiles := []string{
+		".env",                    // Current directory
+		"backend/.env",           // From project root
+		"../.env",                // From backend subdirectory
+		"../../.env",             // From deeper nested paths
+	}
+	
+	loaded := false
+	for _, envFile := range envFiles {
+		if err := godotenv.Load(envFile); err == nil {
+			log.Infof("Loaded environment from %s", envFile)
+			loaded = true
+			break
+		}
+	}
+	
+	if !loaded {
 		log.Info("No .env file found, using environment variables")
 	}
 
@@ -106,12 +122,15 @@ func Load() (*Config, error) {
 
 // validate checks that required configuration values are present
 func (c *Config) validate() error {
-	if c.Database.URL == "" && c.Database.Password == "" {
-		return fmt.Errorf("database URL or password is required")
-	}
-
-	if c.OpenAI.APIKey == "" {
-		return fmt.Errorf("OpenAI API key is required")
+	// For development, allow running without database initially
+	if c.Server.Environment == "production" {
+		if c.Database.URL == "" && c.Database.Password == "" {
+			return fmt.Errorf("database URL or password is required in production")
+		}
+		
+		if c.OpenAI.APIKey == "" {
+			return fmt.Errorf("OpenAI API key is required in production")
+		}
 	}
 
 	return nil
